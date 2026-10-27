@@ -149,6 +149,11 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .sev { display: inline-block; min-width: 2.2em; text-align: center; font-family: var(--font-mono); font-weight: 500; border-radius: 4px; padding: 0 4px; color: var(--surface); background: var(--sev, var(--plan)); }
 .empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; font-size: .88rem; color: var(--muted); }
 details summary { cursor: pointer; font-weight: 600; }
+.hdr-right { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+.sync { font-size: .8rem; color: var(--muted); }
+.sync::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; vertical-align: 1px; }
+.sync[data-tone="ok"]::before { background: var(--good); }
+.sync[data-tone="warn"]::before { background: var(--plan); }
 .foot { font-size: .82rem; color: var(--muted); display: grid; gap: 8px; }
 .foot a, .panel a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -160,7 +165,10 @@ details summary { cursor: pointer; font-weight: 600; }
       <div class="eyebrow">Buprenorphine · estimated mu-opioid receptor occupancy</div>
       <h1>Taper Tracker</h1>
     </div>
-    <span class="muted mono" id="clock"></span>
+    <div class="hdr-right">
+      <span class="sync" id="sync" data-tone="">Checking your account…</span>
+      <span class="muted mono" id="clock"></span>
+    </div>
   </header>
 
   <div class="banner" id="exampleBanner" hidden>
@@ -327,7 +335,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <details>
       <summary>Back up or move your data</summary>
       <div style="display:grid;gap:10px;margin-top:12px">
-        <p class="hint">Your doses are saved only in this browser. Copy the backup text somewhere safe (a Notion page works), or paste one here to restore it.</p>
+        <p class="hint">When you open this page signed in to Claude, your doses and check-ins save to a private area of your account and sync across devices. A downloaded copy saves only in that browser. Either way, copying a backup somewhere safe (a Notion page works) is a good habit. Paste a backup here to restore it.</p>
         <label>Backup text<textarea id="io" spellcheck="false"></textarea></label>
         <div class="row">
           <button class="ghost" type="button" id="exportBtn">Show my backup</button>
@@ -378,6 +386,7 @@ details summary { cursor: pointer; font-weight: 600; }
     return { doses, checkins, params: { ...DEFAULTS, ...(o.params || {}) }, example: false };
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+  function persist() { save(); schedulePush(); }
   function exampleState() {
     const day0 = new Date(); day0.setHours(0, 0, 0, 0);
     const segs = [[16, 70], [12, 14], [8, 14], [6, 10], [4, 16], [3, 10], [2, 14], [1, 14], [0.5, 10]];
@@ -615,7 +624,7 @@ details summary { cursor: pointer; font-weight: 600; }
 
   // ---------- forms ----------
   function commit(msg) {
-    state.example = false; save(); recompute();
+    state.example = false; persist(); recompute();
     if (msg) $("addMsg").textContent = msg;
   }
   document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
@@ -676,10 +685,10 @@ details summary { cursor: pointer; font-weight: 600; }
   fillParams();
   $("f-settings").addEventListener("input", () => {
     const hl = +$("p-hl").value, ec50 = +$("p-ec50").value, omax = +$("p-omax").value;
-    if (hl >= 12 && hl <= 72 && ec50 >= 1 && ec50 <= 30 && omax >= 50 && omax <= 100) { state.params = { hl, ec50, omax }; save(); recompute(); }
+    if (hl >= 12 && hl <= 72 && ec50 >= 1 && ec50 <= 30 && omax >= 50 && omax <= 100) { state.params = { hl, ec50, omax }; persist(); recompute(); }
   });
   $("f-settings").addEventListener("submit", e => e.preventDefault());
-  $("resetParams").addEventListener("click", () => { state.params = { ...DEFAULTS }; fillParams(); save(); recompute(); });
+  $("resetParams").addEventListener("click", () => { state.params = { ...DEFAULTS }; fillParams(); persist(); recompute(); });
 
   // backup
   $("exportBtn").addEventListener("click", () => {
@@ -697,7 +706,7 @@ details summary { cursor: pointer; font-weight: 600; }
       const next = fromBackup(o);
       if (!next.doses.length) throw new Error("no doses");
       state = next;
-      fillParams(); save(); recompute(); $("ioMsg").textContent = `Restored ${next.doses.length} doses and ${next.checkins.length} check-ins.`;
+      fillParams(); persist(); recompute(); $("ioMsg").textContent = `Restored ${next.doses.length} doses and ${next.checkins.length} check-ins.`;
     } catch (e) { $("ioMsg").textContent = "That text is not a Taper Tracker backup. Paste the full backup, starting with {."; }
   }
   $("importBtn").addEventListener("click", () => restore($("io").value));
@@ -746,8 +755,64 @@ details summary { cursor: pointer; font-weight: 600; }
       : `<div class="empty">Nothing here yet. Save a check-in once or twice a day, ideally at the same times. Each one lands in an occupancy band, and the average score for each band shows up here.</div>`;
   }
 
+  // ---------- account sync ----------
+  // Saves to the viewer's private data/users/<id>/ area when the page runs inside Claude.
+  let cloud = null, writing = false, dirty = false, pushTimer = null;
+  const lastWrite = { tracker: 0, checkins: 0 };
+  function setSync(text, tone) { const el = $("sync"); el.textContent = text; el.dataset.tone = tone || ""; }
+  function schedulePush() { if (!cloud) return; clearTimeout(pushTimer); setSync("Saving…"); pushTimer = setTimeout(pushCloud, 700); }
+  const packTracker = () => ({ v: 2, params: P(), example: !!state.example, doses: state.doses.map(d => [d.t, d.mg]), updatedAt: lastWrite.tracker = Date.now() });
+  const packCheckins = () => ({ v: 2, items: state.checkins.map(c => [c.t, c.score, c.symptoms, c.note]), updatedAt: lastWrite.checkins = Date.now() + 1 });
+  async function writeOnce(ref, body) {
+    try { await ref.set(body); }
+    catch (e) { if (e && e.code === "unavailable") { await new Promise(r => setTimeout(r, 800 + Math.random() * 1200)); await ref.set(body); } else throw e; }
+  }
+  async function pushCloud() {
+    if (!cloud) return;
+    if (writing) { dirty = true; return; }
+    writing = true;
+    try {
+      do { dirty = false; await writeOnce(cloud.tracker, packTracker()); await writeOnce(cloud.checkins, packCheckins()); } while (dirty);
+      setSync("Saved to your Claude account", "ok");
+    } catch (e) {
+      setSync(e && e.code === "quota_exceeded" ? "Account storage is full. Copy a backup." : "Not synced right now. Saved on this device.", "warn");
+    } finally { writing = false; }
+  }
+  async function startSync() {
+    if (!(window.claude && typeof window.claude.use === "function")) { setSync("Saved on this device only", "warn"); return; }
+    let db = null, user = null, uid = null;
+    try { [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]); uid = user ? await user.id() : null; } catch (e) {}
+    if (!db || !uid) { setSync("Saved on this device only. Sign in to Claude to sync.", "warn"); return; }
+    const base = "data/users/" + uid;
+    cloud = { tracker: db.doc(base + "/tracker"), checkins: db.doc(base + "/checkins") };
+    let settled = { tracker: false, checkins: false };
+    const onErr = () => setSync("Not synced right now. Saved on this device.", "warn");
+    const handle = (key, apply) => snap => {
+      if (snap.metadata.hasPendingWrites) return;
+      if (!snap.exists) {
+        // Nothing in the account yet: upload what this device has (first run or migration).
+        if (!settled[key] && !snap.metadata.fromCache) { settled[key] = true; schedulePush(); }
+        return;
+      }
+      settled[key] = true;
+      const d = snap.data();
+      if (d.updatedAt === lastWrite[key]) { setSync("Saved to your Claude account", "ok"); return; }
+      apply(d); save(); fillParams(); recompute();
+      setSync("Saved to your Claude account", "ok");
+    };
+    cloud.tracker.onSnapshot(handle("tracker", d => {
+      state.doses = (d.doses || []).map(([t, mg]) => ({ t, mg })).filter(x => isFinite(x.t) && x.mg > 0);
+      state.params = { ...DEFAULTS, ...(d.params || {}) };
+      state.example = !!d.example;
+    }), onErr);
+    cloud.checkins.onSnapshot(handle("checkins", d => {
+      state.checkins = (d.items || []).map(([t, score, symptoms, note]) => ({ t, score, symptoms: symptoms || [], note: note || "" }));
+    }), onErr);
+  }
+
   // ---------- run ----------
   recompute();
+  startSync();
   setInterval(tick, 1000);
   setInterval(recompute, 10 * 60e3); // refresh projections and chart as time passes
 })();

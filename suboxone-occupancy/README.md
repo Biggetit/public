@@ -15,4 +15,8 @@ A single-file web app that estimates buprenorphine (Suboxone) mu-opioid receptor
 ## Model
 Each dose is absorbed and eliminated with one compartment (absorption ~1.2/h, half-life 37 h by default). The doses are summed, then put through a saturating curve: occupancy = Omax · A / (A + EC50). Defaults (Omax 95%, EC50 7 mg-eq) match PET results from Greenwald et al.: about 41%, 80%, and 84–88% occupancy at 2, 16, and 32 mg/day.
 
-This is an estimate for motivation only, not medical advice. Data stays in your browser (localStorage). Use the backup section to save it.
+This is an estimate for motivation only, not medical advice.
+
+## Where data is saved
+- Opened as a Claude artifact while signed in: a private per-user area of the artifact's database (`data/users/<id>/tracker` and `/checkins`), synced across devices.
+- Opened as a plain file: that browser's localStorage only. Use the backup section to copy your data out.
