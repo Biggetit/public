@@ -69,6 +69,13 @@ header { display: flex; flex-wrap: wrap; justify-content: space-between; align-i
 .big small { font-size: .38em; font-weight: 500; letter-spacing: 0; color: var(--muted); }
 .decimals { color: var(--muted); }
 .trend { font-size: .9rem; }
+.big-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.arrow-box { display: grid; justify-items: center; gap: 2px; color: var(--ink); }
+.arrow-box svg { display: block; }
+#arrowG { transform-origin: 20px 20px; transition: transform .6s ease; }
+.arrow-word { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.stat .v small { color: var(--muted); font-size: .8em; }
+.stat > span:first-child { white-space: nowrap; }
 .stats { display: grid; gap: 10px; }
 .stat { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline; border-top: 1px solid var(--line); padding-top: 8px; }
 .stat .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .95rem; text-align: right; }
@@ -221,6 +228,10 @@ details summary { cursor: pointer; font-weight: 600; }
       <section>
         <h3>On this page</h3>
         <dl>
+          <dt>Trend arrow</dt>
+          <dd>Shows which way occupancy is moving right now, based on the last 10 minutes. It points up after a dose while it absorbs, levels off near the peak, and tilts down as your body clears it. The steeper the arrow, the faster the change. Tap or hover on it to see the exact points per hour.</dd>
+          <dt>Next peak / Last peak</dt>
+          <dd>Like a weather forecast's daily high: the estimated highest occupancy from your latest dose and when it happens, usually 3–4 hours after dosing. Once that time passes, it switches to "Last peak" until your next dose (a planned dose counts too). A small triangle marks the peak on the chart.</dd>
           <dt>Since last dose</dt>
           <dd>Time since the most recent dose you logged that is not in the future.</dd>
           <dt>Next milestone</dt>
@@ -263,12 +274,19 @@ details summary { cursor: pointer; font-weight: 600; }
   <section class="panel live" aria-live="off">
     <div class="reading">
       <div class="eyebrow">Right now</div>
-      <div class="big" id="occBig">--<small>%</small></div>
+      <div class="big-row">
+        <div class="big" id="occBig">--<small>%</small></div>
+        <div class="arrow-box" id="arrowBox" role="img" aria-label="Trend">
+          <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><g id="arrowG"><path d="M6 20h24M21 11l9 9-9 9" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+          <span class="arrow-word" id="arrowWord">--</span>
+        </div>
+      </div>
       <div class="trend" id="trend">&nbsp;</div>
     </div>
     <div class="stats">
       <div class="stat"><span>Since last dose</span><span class="v" id="sinceLast">--</span></div>
       <div class="stat"><span id="nextLabel">Next milestone</span><span class="v" id="nextIn">--</span></div>
+      <div class="stat"><span id="peakLabel">Next peak</span><span class="v" id="peakVal">--</span></div>
       <div class="stat"><span>Estimated plasma level</span><span class="v" id="level">--</span></div>
       <div class="stat"><span>Status</span><span class="v" id="zone">--</span></div>
     </div>
@@ -539,12 +557,34 @@ details summary { cursor: pointer; font-weight: 600; }
   const fmtMg = mg => (Math.round(mg * 100) / 100).toString();
 
   // ---------- live panel ----------
-  let cache = { plan: {}, stop: {} };
+  let cache = { plan: {}, stop: {}, peak: null };
+  // Local maxima of occupancy between a and b (5-minute scan, then refined)
+  function peaksBetween(a, b, p) {
+    const step = 5 * 60e3, out = [];
+    let t0 = a, o0 = occAt(a - step, p), o1 = occAt(a, p);
+    for (let t = a + step; t <= b; t += step) {
+      const o2 = occAt(t, p);
+      if (o1 > o0 && o1 >= o2) {
+        let lo = t - 2 * step, hi = t; // ternary search for the exact top
+        for (let k = 0; k < 30; k++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (occAt(m1, p) < occAt(m2, p)) lo = m1; else hi = m2; }
+        const tp = (lo + hi) / 2; out.push({ t: tp, o: occAt(tp, p) });
+      }
+      o0 = o1; o1 = o2; t0 = t;
+    }
+    return out;
+  }
+  function findPeak(now, p) {
+    const next = peaksBetween(now, now + 36 * H, p)[0];
+    if (next) return { ...next, upcoming: true };
+    const prev = peaksBetween(now - 36 * H, now, p).pop();
+    return prev ? { ...prev, upcoming: false } : null;
+  }
   function recompute() {
     sortDoses();
     const p = P(), now = Date.now();
     cache.plan = crossings(now, p, Infinity);
     cache.stop = crossings(now, p, now);
+    cache.peak = findPeak(now, p);
     state.checkins.sort((a, b) => a.t - b.t);
     renderMilestones(); renderLog(); renderSS(); renderCheckins(); drawChart(); tick();
     $("exampleBanner").hidden = !state.example;
@@ -556,6 +596,21 @@ details summary { cursor: pointer; font-weight: 600; }
     const whole = Math.floor(o), dec = (o - whole).toFixed(4).slice(1);
     $("occBig").innerHTML = `${whole}<span class="decimals">${dec}</span><small>%</small>`;
     const perDay = o - occAt(now - D, p); // change vs. same time yesterday
+    // short-term direction: points per hour over the last 10 minutes
+    const perHr = (o - occAt(now - 10 * 60e3, p)) * 6;
+    const ang = -Math.max(-80, Math.min(80, perHr * 55));
+    $("arrowG").style.transform = `rotate(${ang.toFixed(1)}deg)`;
+    const word = Math.abs(perHr) < 0.05 ? "Steady" : perHr > 0 ? "Rising" : "Falling";
+    $("arrowWord").textContent = word;
+    $("arrowBox").setAttribute("aria-label", `${word}, ${perHr >= 0 ? "+" : ""}${perHr.toFixed(2)} points per hour`);
+    $("arrowBox").title = `${perHr >= 0 ? "+" : ""}${perHr.toFixed(2)} points per hour`;
+    if (cache.peak && cache.peak.upcoming && cache.peak.t <= now) cache.peak = findPeak(now, p);
+    const pk = cache.peak, clockT = t => new Date(t).toDateString() === new Date(now).toDateString()
+      ? new Date(t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+      : new Date(t).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+    if (!pk) { $("peakLabel").textContent = "Next peak"; $("peakVal").textContent = "none expected"; }
+    else if (pk.upcoming) { $("peakLabel").textContent = "Next peak"; $("peakVal").innerHTML = `${pk.o.toFixed(1)}% · ${clockT(pk.t)} <small>in ${fmtDur(pk.t - now).replace(/ \d+s$/, "")}</small>`; }
+    else { $("peakLabel").textContent = "Last peak"; $("peakVal").innerHTML = `${pk.o.toFixed(1)}% · ${clockT(pk.t)} <small>${fmtDur(now - pk.t).replace(/ \d+s$/, "")} ago</small>`; }
     $("trend").innerHTML = state.doses.some(d => d.t <= now)
       ? (perDay < 0 ? `Down <span class="mono">${Math.abs(perDay).toFixed(2)}</span> points from this time yesterday` : `Up <span class="mono">${perDay.toFixed(2)}</span> points from this time yesterday`)
       : "No doses logged before now";
@@ -670,6 +725,15 @@ details summary { cursor: pointer; font-weight: 600; }
       const x = X(c.t), y = m.t + (1 - c.score / 10) * ph;
       g.beginPath(); g.arc(x, y, 5, 0, 7); g.fillStyle = sevColor(c.score); g.fill();
       g.strokeStyle = css("--surface"); g.lineWidth = 1.5; g.stroke();
+    }
+    // peak marker
+    const pk = cache.peak;
+    if (pk && pk.t >= t0 && pk.t <= t1) {
+      const px = X(pk.t), py = Y(pk.o);
+      g.strokeStyle = css("--ink"); g.lineWidth = 1.5; g.fillStyle = css("--surface");
+      g.beginPath(); g.moveTo(px, py - 11); g.lineTo(px - 5, py - 18); g.lineTo(px + 5, py - 18); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = css("--ink"); g.textAlign = px > m.l + pw - 60 ? "right" : px < m.l + 60 ? "left" : "center"; g.textBaseline = "bottom";
+      g.fillText("peak " + new Date(pk.t).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }), px, py - 20);
     }
     // now marker
     const nx = X(now), ny = Y(occAt(now, p));
