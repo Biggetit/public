@@ -142,6 +142,17 @@ input[type="range"] { padding: 0; accent-color: var(--accent); background: trans
 .sev { display: inline-block; min-width: 2.2em; text-align: center; font-family: var(--font-mono); font-weight: 500; border-radius: 4px; padding: 0 4px; color: var(--surface); background: var(--sev, var(--plan)); }
 .empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; font-size: .88rem; color: var(--muted); }
 details summary { cursor: pointer; font-weight: 600; }
+.help { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; }
+.help[open] { padding-bottom: 18px; }
+.help summary { color: var(--accent); }
+.help-body { display: grid; gap: 18px; margin-top: 14px; max-width: 68ch; }
+.help h3 { font-family: var(--font-display); font-size: 1rem; margin: 0 0 6px; }
+.help dl { margin: 0; display: grid; gap: 10px; }
+.help dt { font-weight: 600; }
+.help dd { margin: 2px 0 0; color: var(--muted); font-size: .9rem; }
+.zone-key { display: grid; gap: 6px; }
+.zone-key div { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: .9rem; }
+.zone-key div > span:first-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .hdr-right { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
 .sync { font-size: .8rem; color: var(--muted); }
 .sync::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; vertical-align: 1px; }
@@ -163,6 +174,79 @@ details summary { cursor: pointer; font-weight: 600; }
       <span class="muted mono" id="clock"></span>
     </div>
   </header>
+
+  <details class="help" id="help">
+    <summary>Help: what the terms mean</summary>
+    <div class="help-body">
+      <section>
+        <h3>The basics</h3>
+        <dl>
+          <dt>Receptor occupancy</dt>
+          <dd>The share of your brain's mu-opioid receptors that buprenorphine is sitting on right now. Those receptors are what opioids act on. When enough of them are covered, your body doesn't go into withdrawal. As you taper, the share goes down, and your body slowly gets used to working with fewer of them filled.</dd>
+          <dt>Estimate</dt>
+          <dd>Nobody can measure your occupancy without a brain scan. This page calculates it from your doses using averages from published brain-scan studies. Use it to see trends and timing, not as an exact number.</dd>
+          <dt>Half-life</dt>
+          <dd>How long it takes your body to clear half of the buprenorphine. The default is 37 hours. After about 5 half-lives (roughly 8 days), very little is left.</dd>
+          <dt>Steady state</dt>
+          <dd>After about a week on the same daily dose, the amount you take in each day balances what your body clears, so each day looks like the last. After a dose change it takes about a week to settle at the new level.</dd>
+          <dt>Peak and trough</dt>
+          <dd>Peak is the high point of the day, a few hours after you dose. Trough is the low point, just before your next dose. The zigzag on the chart is this daily rise and fall.</dd>
+        </dl>
+      </section>
+      <section>
+        <h3>Status labels</h3>
+        <p class="hint" style="margin-bottom:8px">The label under "Right now" depends only on the current occupancy number:</p>
+        <div class="zone-key">
+          <div><span>80% +</span><span><strong>Full block range.</strong> Typical of 16 mg a day or more. Other opioids have little room to act.</span></div>
+          <div><span>55–80%</span><span><strong>Withdrawal usually held off.</strong> Most people feel stable here.</span></div>
+          <div><span>20–55%</span><span><strong>Withdrawal zone.</strong> The range where withdrawal symptoms often start.</span></div>
+          <div><span>5–20%</span><span><strong>Low occupancy.</strong> Most of the drug has cleared.</span></div>
+          <div><span>under 5%</span><span><strong>Nearly clear.</strong> Very little buprenorphine is left on the receptors.</span></div>
+        </div>
+      </section>
+      <section>
+        <h3>About the withdrawal zone</h3>
+        <dl>
+          <dd style="margin:0">Brain-scan research (<a href="https://pubmed.ncbi.nlm.nih.gov/?term=Greenwald+Comer+Fiellin+2014+buprenorphine+maintenance+mu-opioid+receptor+availability" target="_blank" rel="noopener">Greenwald, Comer &amp; Fiellin, 2014</a>) found that buprenorphine generally needs to cover about 50–60% of receptors to keep withdrawal away for most people. Below that, symptoms become more likely. That is why the chart shades everything under 55%, and why the status says "Withdrawal zone" there.</dd>
+          <dd style="margin:0">It is an average, not a line you will feel. Many people on low doses sit in this zone and feel fine, because their body has slowly adjusted. Others feel symptoms above it. A fast drop into the zone usually feels worse than a slow one. Your own check-ins are the best guide. After a couple of weeks, the "Your symptoms by occupancy" table shows where your symptoms actually start.</dd>
+        </dl>
+      </section>
+      <section>
+        <h3>On this page</h3>
+        <dl>
+          <dt>Since last dose</dt>
+          <dd>Time since the most recent dose you logged that is not in the future.</dd>
+          <dt>Next milestone</dt>
+          <dd>A countdown to when occupancy should first dip below the next level (80, 70, 60, 50, 40, 30, 20, 10, 5, 1%). "(plan)" means it counts your planned future doses.</dd>
+          <dt>Estimated plasma level (mg-eq)</dt>
+          <dd>The model's estimate of how much buprenorphine is active in your body, in milligram-equivalents. It isn't a lab value, but it lets you compare one day with another.</dd>
+          <dt>Planned dose</dt>
+          <dd>Any dose dated in the future. Planned doses show in orange in the dose log and drive the dashed part of the chart.</dd>
+          <dt>Projected ahead (dashed line)</dt>
+          <dd>Where occupancy is headed from now. It includes your planned doses; with none, it shows the drop if you stopped now.</dd>
+          <dt>Following plan / If you stop now</dt>
+          <dd>The two columns in Milestones. "Following plan" counts your planned doses. "If you stop now" assumes you take nothing more.</dd>
+          <dt>Check-in score</dt>
+          <dd>Your own 0–10 rating of withdrawal symptoms. 0 is none, 5 is hard to ignore, 10 is the worst you can imagine. The dots on the chart are green for 0–2, orange for 3–5 and red for 6 or higher.</dd>
+          <dt>Your symptoms by occupancy</dt>
+          <dd>Your check-ins grouped by the occupancy you were at, with the average score for each group. Scores that rise in the lower groups show where your symptoms start.</dd>
+          <dt>Why the last milligrams feel hardest</dt>
+          <dd>The steady-state occupancy for each daily dose. Occupancy levels off at high doses, so going from 16 to 8 mg changes it only a little, while going from 2 mg to 0 changes it a lot.</dd>
+        </dl>
+      </section>
+      <section>
+        <h3>Settings and saving</h3>
+        <dl>
+          <dt>Dose for half of max occupancy (mg-eq)</dt>
+          <dd>How strongly a small amount of buprenorphine covers receptors. Lower numbers make low doses show higher occupancy. The default is 7, which matches the brain-scan studies.</dd>
+          <dt>Max occupancy</dt>
+          <dd>The highest occupancy any dose can reach. Even very high doses leave a few receptors open, so the default is 95%.</dd>
+          <dt>Sync badge</dt>
+          <dd>The dot at the top. Green, "Saved to your Claude account," means your history is stored in your account and syncs across devices. Orange means it is saved only in this browser.</dd>
+        </dl>
+      </section>
+    </div>
+  </details>
 
   <div class="banner" id="exampleBanner" hidden>
     <span><strong>Example history loaded.</strong> These doses are made up so you can see how it works. Clear them and enter your own.</span>
@@ -333,6 +417,7 @@ details summary { cursor: pointer; font-weight: 600; }
         <div class="row">
           <button class="ghost" type="button" id="exportBtn">Show my backup</button>
           <button class="ghost" type="button" id="copyBtn">Copy</button>
+          <button class="ghost" type="button" id="saveFileBtn" hidden>Save backup file</button>
           <button class="ghost" type="button" id="importBtn">Restore from text</button>
           <label style="display:inline-grid">Or load a file<input id="file" type="file" accept=".json,application/json,text/plain"></label>
         </div>
@@ -693,6 +778,23 @@ details summary { cursor: pointer; font-weight: 600; }
     const ta = $("io"); if (!ta.value) $("exportBtn").click();
     navigator.clipboard.writeText(ta.value).then(() => $("ioMsg").textContent = "Copied.", () => { ta.select(); $("ioMsg").textContent = "Copy was blocked. The text is selected, so copy it by hand."; });
   });
+  function backupText() { $("exportBtn").click(); return $("io").value; }
+  (async () => {
+    if (!(window.claude && typeof window.claude.use === "function")) return;
+    let dl = null; try { dl = await window.claude.use("downloads"); } catch (e) {}
+    if (!dl) return;
+    const b = $("saveFileBtn"); b.hidden = false;
+    b.addEventListener("click", async () => {
+      const d = new Date(), name = `taper-tracker-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+      try { await dl.save({ filename: name, data: backupText() }); $("ioMsg").textContent = `Saved ${name}. On Android it goes to your Downloads folder.`; }
+      catch (e) {
+        const c = e && e.code;
+        if (c === "declined") $("ioMsg").textContent = "Backup file not saved.";
+        else if (c === "rate_limited") $("ioMsg").textContent = "A save prompt is already open. Finish that one first.";
+        else { b.hidden = true; $("ioMsg").textContent = "Saving files isn't available here. Use Copy instead."; }
+      }
+    });
+  })();
   function restore(text) {
     try {
       const o = JSON.parse(text);
