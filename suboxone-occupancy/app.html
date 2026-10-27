@@ -120,6 +120,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ss-bar { position: relative; height: 12px; background: var(--bg); border-radius: 3px; overflow: hidden; }
 .ss-bar span { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
 .ss-bar em { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); }
+/* check-ins */
+.legend i.dot { width: 10px; height: 10px; border: 0; border-radius: 50%; background: var(--plan); }
+.score-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 12px; align-items: center; }
+input[type="range"] { padding: 0; accent-color: var(--accent); background: transparent; border: 0; }
+.score-val { font-family: var(--font-display); font-weight: 700; font-size: 2rem; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.score-val small { font-size: .45em; color: var(--muted); font-weight: 500; }
+.scale-ends { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.chips legend { font-size: .8rem; color: var(--muted); font-weight: 500; padding: 0; margin-bottom: 6px; }
+.chip { position: relative; }
+.chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chip span { display: inline-block; font-size: .82rem; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+.chip input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+.chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ci-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.ci-form .row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+.bands { display: grid; gap: 6px; }
+.band-row { display: grid; grid-template-columns: 82px minmax(0, 1fr) 112px; gap: 10px; align-items: center; font-size: .86rem; }
+.band-row .ss-bar span { background: var(--sev, var(--plan)); }
+.sev { display: inline-block; min-width: 2.2em; text-align: center; font-family: var(--font-mono); font-weight: 500; border-radius: 4px; padding: 0 4px; color: var(--surface); background: var(--sev, var(--plan)); }
+.empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; font-size: .88rem; color: var(--muted); }
 details summary { cursor: pointer; font-weight: 600; }
 .foot { font-size: .82rem; color: var(--muted); display: grid; gap: 8px; }
 .foot a, .panel a { color: var(--accent); }
@@ -170,9 +191,49 @@ details summary { cursor: pointer; font-weight: 600; }
     </div>
     <div class="legend">
       <span><i></i>Doses taken</span>
-      <span><i class="plan"></i>Projected from planned doses</span>
+      <span><i class="plan"></i>Projected ahead (includes planned doses)</span>
       <span><i class="zone"></i>Below ~55%: withdrawal often starts</span>
+      <span><i class="dot"></i>Your check-ins (right axis, 0–10)</span>
     </div>
+  </section>
+
+  <section class="panel">
+    <div class="chart-head">
+      <h2>How are you feeling?</h2>
+      <span class="hint" id="ciCount"></span>
+    </div>
+    <form class="ci-form" id="f-checkin">
+      <label for="c-score">Withdrawal symptoms right now</label>
+      <div class="score-row">
+        <div>
+          <input id="c-score" type="range" min="0" max="10" step="1" value="2" aria-describedby="c-ends">
+          <div class="scale-ends" id="c-ends"><span>0 · none</span><span>5 · hard to ignore</span><span>10 · worst</span></div>
+        </div>
+        <div class="score-val" id="c-scoreVal">2<small>/10</small></div>
+      </div>
+      <fieldset class="chips" id="c-symptoms">
+        <legend>What are you noticing? (optional)</legend>
+      </fieldset>
+      <div class="row2">
+        <label>When<input id="c-when" type="datetime-local" required></label>
+        <label>Note (optional)<input id="c-note" type="text" maxlength="200" placeholder="Slept badly, busy day at work…"></label>
+        <button class="primary" type="submit">Save check-in</button>
+      </div>
+      <p class="hint" id="ciMsg">Each check-in is matched to your estimated occupancy at that moment. After a week or two, the table below shows where your symptoms actually start.</p>
+    </form>
+
+    <h2 style="font-size:1rem">Your symptoms by occupancy</h2>
+    <div class="bands" id="bands"></div>
+
+    <details>
+      <summary>Check-in history</summary>
+      <div class="log" style="margin-top:10px">
+        <table>
+          <thead><tr><th>When</th><th>Score</th><th>Occ.</th><th>Symptoms &amp; note</th><th></th></tr></thead>
+          <tbody id="ciBody"></tbody>
+        </table>
+      </div>
+    </details>
   </section>
 
   <section class="panel">
@@ -289,11 +350,25 @@ details summary { cursor: pointer; font-weight: 600; }
   const LEVELS = [80, 70, 60, 50, 40, 30, 20, 10, 5, 1];
   const $ = id => document.getElementById(id);
 
+  const SYMPTOMS = ["Anxiety", "Restless legs", "Sweats or chills", "Yawning", "Runny nose or watery eyes", "Stomach or diarrhea", "Trouble sleeping", "Aches", "Low mood", "Low energy", "Cravings"];
+  // A personal build can set SEED to { doses: [{ time, mg }], params } so the page opens with real history.
+  const SEED = null;
+
   // ---------- state ----------
-  let state = load() || exampleState();
+  let state = init();
+  function init() {
+    const s = load();
+    if (s && !(s.example && SEED)) return { checkins: [], ...s };
+    return SEED ? fromBackup(SEED) : exampleState();
+  }
   function load() {
     try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.doses)) return s; } catch (e) {}
     return null;
+  }
+  function fromBackup(o) {
+    const doses = (o.doses || []).map(d => ({ t: d.t ?? Date.parse(d.time), mg: +d.mg })).filter(d => isFinite(d.t) && d.mg > 0);
+    const checkins = (o.checkins || []).map(c => ({ t: c.t ?? Date.parse(c.time), score: Math.max(0, Math.min(10, Math.round(+c.score))), symptoms: Array.isArray(c.symptoms) ? c.symptoms.map(String) : [], note: String(c.note || "") })).filter(c => isFinite(c.t) && isFinite(c.score));
+    return { doses, checkins, params: { ...DEFAULTS, ...(o.params || {}) }, example: false };
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
   function exampleState() {
@@ -301,7 +376,10 @@ details summary { cursor: pointer; font-weight: 600; }
     const segs = [[16, 70], [12, 14], [8, 14], [6, 10], [4, 16], [3, 10], [2, 14], [1, 14], [0.5, 10]];
     const doses = []; let i = -120;
     for (const [mg, n] of segs) for (let k = 0; k < n; k++, i++) doses.push({ t: day0.getTime() + i * D + 8 * H, mg });
-    return { doses, params: { ...DEFAULTS }, example: true };
+    const checkins = [[-40, 1, []], [-33, 1, []], [-27, 2, ["Trouble sleeping"]], [-21, 2, ["Yawning"]], [-15, 3, ["Restless legs", "Trouble sleeping"]],
+      [-10, 2, ["Low energy"]], [-6, 3, ["Restless legs"]], [-3, 4, ["Anxiety", "Restless legs"]], [-1, 3, ["Yawning", "Low energy"]]]
+      .map(([dd, score, symptoms]) => ({ t: day0.getTime() + dd * D + 20 * H, score, symptoms, note: "Example" }));
+    return { doses, checkins, params: { ...DEFAULTS }, example: true };
   }
   const P = () => ({ ...DEFAULTS, ...(state.params || {}) });
   const sortDoses = () => state.doses.sort((a, b) => a.t - b.t);
@@ -366,7 +444,8 @@ details summary { cursor: pointer; font-weight: 600; }
     const p = P(), now = Date.now();
     cache.plan = crossings(now, p, Infinity);
     cache.stop = crossings(now, p, now);
-    renderMilestones(); renderLog(); renderSS(); drawChart(); tick();
+    state.checkins.sort((a, b) => a.t - b.t);
+    renderMilestones(); renderLog(); renderSS(); renderCheckins(); drawChart(); tick();
     $("exampleBanner").hidden = !state.example;
   }
   function tick() {
@@ -437,7 +516,7 @@ details summary { cursor: pointer; font-weight: 600; }
     } else {
       const span = (range === "all" ? 30 : +range) * D; t0 = now - span * .7; t1 = now + span * .3;
     }
-    const m = { l: 40, r: 12, t: 12, b: 44 }, pw = W - m.l - m.r, ph = Ht - m.t - m.b;
+    const m = { l: 40, r: 30, t: 12, b: 44 }, pw = W - m.l - m.r, ph = Ht - m.t - m.b;
     const X = t => m.l + (t - t0) / (t1 - t0) * pw, Y = o => m.t + (1 - o / 100) * ph;
     view = { t0, t1, m, pw, ph, X, Y };
     const font = `12px ${css("--font-mono")}`;
@@ -482,6 +561,15 @@ details summary { cursor: pointer; font-weight: 600; }
       g.beginPath(); fut.forEach((q, i) => i ? g.lineTo(X(q[0]), Y(q[1])) : g.moveTo(X(q[0]), Y(q[1])));
       g.setLineDash([6, 5]); g.strokeStyle = css("--plan"); g.lineWidth = 2; g.stroke(); g.setLineDash([]);
     }
+    // check-ins on the 0-10 right axis
+    g.fillStyle = css("--muted"); g.textAlign = "left"; g.textBaseline = "middle";
+    for (const v of [0, 5, 10]) g.fillText(String(v), m.l + pw + 6, m.t + (1 - v / 10) * ph);
+    for (const c of state.checkins) {
+      if (c.t < t0 || c.t > t1) continue;
+      const x = X(c.t), y = m.t + (1 - c.score / 10) * ph;
+      g.beginPath(); g.arc(x, y, 5, 0, 7); g.fillStyle = sevColor(c.score); g.fill();
+      g.strokeStyle = css("--surface"); g.lineWidth = 1.5; g.stroke();
+    }
     // now marker
     const nx = X(now), ny = Y(occAt(now, p));
     g.strokeStyle = css("--ink"); g.lineWidth = 1; g.globalAlpha = .4;
@@ -496,7 +584,11 @@ details summary { cursor: pointer; font-weight: 600; }
     const r = cv.getBoundingClientRect(), x = ev.clientX - r.left;
     if (x < view.m.l || x > view.m.l + view.pw) { tip.hidden = true; return; }
     const t = view.t0 + (x - view.m.l) / view.pw * (view.t1 - view.t0), o = occAt(t, P());
-    tip.innerHTML = `${fmtDate(t)}<br><strong class="mono">${o.toFixed(1)}%</strong>${t > Date.now() ? ' <span class="muted">projected</span>' : ""}`;
+    let near = null, best = 14;
+    for (const c of state.checkins) { const dx = Math.abs(view.X(c.t) - x); if (dx < best) { best = dx; near = c; } }
+    tip.innerHTML = near
+      ? `${fmtDate(near.t)}<br>Feeling <strong class="mono">${near.score}/10</strong> at <strong class="mono">${occAt(near.t, P()).toFixed(0)}%</strong>${near.symptoms.length ? "<br>" + esc(near.symptoms.join(", ")) : ""}`
+      : `${fmtDate(t)}<br><strong class="mono">${o.toFixed(1)}%</strong>${t > Date.now() ? ' <span class="muted">projected</span>' : ""}`;
     tip.hidden = false;
     const tw = tip.offsetWidth;
     tip.style.left = Math.min(Math.max(0, x - tw / 2), box.clientWidth - tw) + "px";
@@ -570,7 +662,7 @@ details summary { cursor: pointer; font-weight: 600; }
   }
   confirmBtn("clearPlanned", "Yes, remove planned", () => { const now = Date.now(); state.doses = state.doses.filter(d => d.t <= now); commit(); });
   confirmBtn("clearAll", "Yes, delete all", () => { state.doses = []; commit(); });
-  $("clearExample").addEventListener("click", () => { state.doses = []; commit("Example cleared. Start by adding your dose history."); });
+  $("clearExample").addEventListener("click", () => { state.doses = []; state.checkins = []; commit("Example cleared. Start by adding your dose history."); });
 
   // settings
   const fillParams = () => { const p = P(); $("p-hl").value = p.hl; $("p-ec50").value = p.ec50; $("p-omax").value = p.omax; };
@@ -584,7 +676,8 @@ details summary { cursor: pointer; font-weight: 600; }
 
   // backup
   $("exportBtn").addEventListener("click", () => {
-    $("io").value = JSON.stringify({ app: "taper-tracker", v: 1, params: P(), doses: state.doses.map(d => ({ time: new Date(d.t).toISOString(), mg: d.mg })) }, null, 1);
+    $("io").value = JSON.stringify({ app: "taper-tracker", v: 2, params: P(), doses: state.doses.map(d => ({ time: new Date(d.t).toISOString(), mg: d.mg })),
+      checkins: state.checkins.map(c => ({ time: new Date(c.t).toISOString(), score: c.score, symptoms: c.symptoms, note: c.note })) }, null, 1);
     $("ioMsg").textContent = "Backup shown above. Copy it somewhere safe.";
   });
   $("copyBtn").addEventListener("click", () => {
@@ -594,14 +687,57 @@ details summary { cursor: pointer; font-weight: 600; }
   function restore(text) {
     try {
       const o = JSON.parse(text);
-      const doses = (o.doses || []).map(d => ({ t: d.t ?? Date.parse(d.time), mg: +d.mg })).filter(d => isFinite(d.t) && d.mg > 0);
-      if (!doses.length) throw new Error("no doses");
-      state = { doses, params: { ...DEFAULTS, ...(o.params || {}) }, example: false };
-      fillParams(); save(); recompute(); $("ioMsg").textContent = `Restored ${doses.length} doses.`;
+      const next = fromBackup(o);
+      if (!next.doses.length) throw new Error("no doses");
+      state = next;
+      fillParams(); save(); recompute(); $("ioMsg").textContent = `Restored ${next.doses.length} doses and ${next.checkins.length} check-ins.`;
     } catch (e) { $("ioMsg").textContent = "That text is not a Taper Tracker backup. Paste the full backup, starting with {."; }
   }
   $("importBtn").addEventListener("click", () => restore($("io").value));
   $("file").addEventListener("change", e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => restore(r.result); r.readAsText(f); });
+
+  // ---------- check-ins ----------
+  function esc(x) { return String(x).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])); }
+  function sevColor(v) { return css(v <= 2 ? "--good" : v <= 5 ? "--plan" : "--zone-ink"); }
+  const sevVar = v => v <= 2 ? "var(--good)" : v <= 5 ? "var(--plan)" : "var(--zone-ink)";
+  $("c-symptoms").insertAdjacentHTML("beforeend", SYMPTOMS.map((s, i) =>
+    `<label class="chip"><input type="checkbox" id="sym-${i}" value="${esc(s)}"><span>${esc(s)}</span></label>`).join(""));
+  const scoreOut = () => $("c-scoreVal").innerHTML = `${$("c-score").value}<small>/10</small>`;
+  $("c-score").addEventListener("input", scoreOut);
+  $("c-when").value = dtInput(Date.now());
+  $("f-checkin").addEventListener("submit", e => {
+    e.preventDefault();
+    const t = new Date($("c-when").value).getTime(), score = +$("c-score").value;
+    if (!isFinite(t)) { $("ciMsg").textContent = "Pick a date and time for this check-in."; return; }
+    const symptoms = [...$("c-symptoms").querySelectorAll("input:checked")].map(i => i.value);
+    state.checkins.push({ t, score, symptoms, note: $("c-note").value.trim() });
+    $("c-symptoms").querySelectorAll("input").forEach(i => i.checked = false);
+    $("c-note").value = ""; $("c-when").value = dtInput(Date.now());
+    commit();
+    $("ciMsg").textContent = `Saved: ${score}/10 at about ${occAt(t, P()).toFixed(0)}% occupancy.`;
+  });
+  $("ciBody").addEventListener("click", e => {
+    const b = e.target.closest("[data-cdel]"); if (!b) return;
+    state.checkins.splice(+b.dataset.cdel, 1); commit();
+  });
+  function renderCheckins() {
+    const p = P(), list = state.checkins.map((c, i) => ({ ...c, i, occ: occAt(c.t, p) }));
+    $("ciCount").textContent = list.length ? `${list.length} check-in${list.length > 1 ? "s" : ""}` : "";
+    $("ciBody").innerHTML = list.length ? list.slice().reverse().map(c =>
+      `<tr><td>${fmtDate(c.t)}</td><td><span class="sev" style="--sev:${sevVar(c.score)}">${c.score}</span></td><td class="num">${c.occ.toFixed(0)}%</td><td>${esc([c.symptoms.join(", "), c.note].filter(Boolean).join(" · ")) || '<span class="muted">—</span>'}</td><td style="text-align:right"><button class="x" type="button" data-cdel="${c.i}" aria-label="Delete check-in">×</button></td></tr>`
+    ).join("") : `<tr><td colspan="5" class="muted">No check-ins yet.</td></tr>`;
+    const edges = [100, 60, 50, 40, 30, 20, 10, 0];
+    const rows = [];
+    for (let k = 0; k < edges.length - 1; k++) {
+      const hi = edges[k], lo = edges[k + 1], inB = list.filter(c => c.occ < hi + (k === 0 ? 1 : 0) && c.occ >= lo);
+      if (!inB.length) continue;
+      const avg = inB.reduce((a, c) => a + c.score, 0) / inB.length;
+      const label = k === 0 ? `Above ${lo}%` : `${lo}–${hi}%`;
+      rows.push(`<div class="band-row"><span class="mono">${label}</span><div class="ss-bar" style="--sev:${sevVar(avg)}"><span style="left:0;width:${avg * 10}%"></span></div><span class="mono muted" style="text-align:right">avg ${avg.toFixed(1)} · ${inB.length}×</span></div>`);
+    }
+    $("bands").innerHTML = rows.length ? rows.join("")
+      : `<div class="empty">Nothing here yet. Save a check-in once or twice a day, ideally at the same times. Each one lands in an occupancy band, and the average score for each band shows up here.</div>`;
+  }
 
   // ---------- run ----------
   recompute();
