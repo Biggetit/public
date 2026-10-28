@@ -1,4 +1,4 @@
-# Capstone-public
+# public
 
 ## Taper Tracker
 
