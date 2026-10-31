@@ -302,6 +302,7 @@ details summary { cursor: pointer; font-weight: 600; }
       <h2>Occupancy curve <span class="full-reading mono" id="fullReading"></span></h2>
       <div class="row">
         <div class="seg" role="group" aria-label="Time range">
+          <button type="button" data-range="7">1 wk</button>
           <button type="button" data-range="14">2 wk</button>
           <button type="button" data-range="30" aria-pressed="true">30 d</button>
           <button type="button" data-range="90">90 d</button>
@@ -695,7 +696,7 @@ details summary { cursor: pointer; font-weight: 600; }
     g.strokeStyle = css("--line"); g.lineWidth = 1; g.fillStyle = css("--muted"); g.textAlign = "right"; g.textBaseline = "middle";
     for (const o of [0, 25, 50, 75, 100]) { g.beginPath(); g.moveTo(m.l, Y(o) + .5); g.lineTo(m.l + pw, Y(o) + .5); g.stroke(); g.fillText(o + "%", m.l - 6, Y(o)); }
     // x ticks
-    const days = (t1 - t0) / D, stepD = days <= 16 ? 2 : days <= 40 ? 7 : days <= 120 ? 14 : days <= 400 ? 30 : 90;
+    const days = (t1 - t0) / D, stepD = days <= 9 ? 1 : days <= 16 ? 2 : days <= 40 ? 7 : days <= 120 ? 14 : days <= 400 ? 30 : 90;
     const start = new Date(t0); start.setHours(0, 0, 0, 0);
     g.textAlign = "center"; g.textBaseline = "top";
     let lastX = -1e9;
