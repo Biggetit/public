@@ -97,6 +97,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: pan-y; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .82rem; color: var(--muted); }
 .legend i { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--accent); vertical-align: middle; margin-right: 6px; }
 .legend i.plan { border-top: 2.5px dashed var(--plan); }
+.legend i.trend { border-top: 2px solid var(--ink); opacity: .75; }
 .legend i.zone { height: 10px; border: 0; background: var(--zone); border-top: 0; }
 
 /* milestones */
@@ -233,6 +234,8 @@ details summary { cursor: pointer; font-weight: 600; }
         <dl>
           <dt>Full screen</dt>
           <dd>The button beside the time ranges fills your screen with the chart. On a phone, turn it sideways for the widest view; on a computer, press Esc or tap Close to go back.</dd>
+          <dt>Trend line (24-hour average)</dt>
+          <dd>The thin dark line through the middle of the zigzag. At each moment it averages your occupancy over the 12 hours before and the 12 hours after, which cancels out the daily peak and trough and leaves the overall direction. Statisticians call this a centered moving average. It turns dotted where it is based on the projection. Tap the chart to see its value at any time.</dd>
           <dt>Trend arrow</dt>
           <dd>Shows which way occupancy is moving right now, based on the last 10 minutes. It points up after a dose while it absorbs, levels off near the peak, and tilts down as your body clears it. The steeper the arrow, the faster the change. Tap or hover on it to see the exact points per hour.</dd>
           <dt>Next peak / Last peak</dt>
@@ -321,6 +324,7 @@ details summary { cursor: pointer; font-weight: 600; }
     <div class="legend">
       <span><i></i>Doses taken</span>
       <span><i class="plan"></i>Projected ahead (includes planned doses)</span>
+      <span><i class="trend"></i>Trend: 24-hour average</span>
       <span><i class="zone"></i>Below ~55%: withdrawal often starts</span>
       <span><i class="dot"></i>Your check-ins (right axis, 0–10)</span>
     </div>
@@ -730,6 +734,20 @@ details summary { cursor: pointer; font-weight: 600; }
       g.beginPath(); fut.forEach((q, i) => i ? g.lineTo(X(q[0]), Y(q[1])) : g.moveTo(X(q[0]), Y(q[1])));
       g.setLineDash([6, 5]); g.strokeStyle = css("--plan"); g.lineWidth = 2; g.stroke(); g.setLineDash([]);
     }
+    // trend: centered 24-hour moving average, from an hourly grid with running sums
+    const tr = trendSeries(t0, t1, p), step = Math.max(1, Math.floor(tr.length / n));
+    const trPast = [], trFut = [];
+    for (let i = 0; i < tr.length; i += step) (tr[i][0] <= now ? trPast : trFut).push(tr[i]);
+    const nowAvg = avg24(now, p);
+    trPast.push([now, nowAvg]); trFut.unshift([now, nowAvg]);
+    g.strokeStyle = css("--ink"); g.lineWidth = 2; g.globalAlpha = .75;
+    for (const [seg, dash] of [[trPast, []], [trFut, [2, 4]]]) {
+      if (seg.length < 2) continue;
+      g.setLineDash(dash); g.beginPath();
+      seg.forEach((q, i) => i ? g.lineTo(X(q[0]), Y(q[1])) : g.moveTo(X(q[0]), Y(q[1])));
+      g.stroke();
+    }
+    g.setLineDash([]); g.globalAlpha = 1;
     // check-ins on the 0-10 right axis
     g.fillStyle = css("--muted"); g.textAlign = "left"; g.textBaseline = "middle";
     for (const v of [0, 5, 10]) g.fillText(String(v), m.l + pw + 6, m.t + (1 - v / 10) * ph);
@@ -757,6 +775,16 @@ details summary { cursor: pointer; font-weight: 600; }
     g.fillStyle = css("--ink"); g.textAlign = nx > m.l + pw - 50 ? "right" : "left"; g.textBaseline = "top";
     g.fillText("now", nx + (g.textAlign === "left" ? 6 : -6), m.t + 2);
   }
+  // Average occupancy over the 24 hours centered on t (12 h before, 12 h after)
+  function avg24(t, p) { let s = 0; for (let k = -12; k < 12; k++) s += occAt(t + (k + .5) * H, p); return s / 24; }
+  function trendSeries(t0, t1, p) {
+    const a = Math.floor(t0 / H) * H - 12 * H, b = Math.ceil(t1 / H) * H + 12 * H;
+    const vals = [], sums = [0];
+    for (let t = a; t <= b; t += H) { const v = occAt(t + H / 2, p); vals.push(v); sums.push(sums[sums.length - 1] + v); }
+    const out = [];
+    for (let i = 24; i < sums.length; i++) out.push([a + (i - 12) * H, (sums[i] - sums[i - 24]) / 24]);
+    return out.filter(q => q[0] >= t0 && q[0] <= t1);
+  }
   function showTip(ev) {
     if (!view) return;
     const r = cv.getBoundingClientRect(), x = ev.clientX - r.left;
@@ -766,7 +794,7 @@ details summary { cursor: pointer; font-weight: 600; }
     for (const c of state.checkins) { const dx = Math.abs(view.X(c.t) - x); if (dx < best) { best = dx; near = c; } }
     tip.innerHTML = near
       ? `${fmtDate(near.t)}<br>Feeling <strong class="mono">${near.score}/10</strong> at <strong class="mono">${occAt(near.t, P()).toFixed(0)}%</strong>${near.symptoms.length ? "<br>" + esc(near.symptoms.join(", ")) : ""}`
-      : `${fmtDate(t)}<br><strong class="mono">${o.toFixed(1)}%</strong>${t > Date.now() ? ' <span class="muted">projected</span>' : ""}`;
+      : `${fmtDate(t)}<br><strong class="mono">${o.toFixed(1)}%</strong>${t > Date.now() ? ' <span class="muted">projected</span>' : ""}<br><span class="muted">24-h average</span> <span class="mono">${avg24(t, P()).toFixed(1)}%</span>`;
     tip.hidden = false;
     const tw = tip.offsetWidth;
     tip.style.left = Math.min(Math.max(0, x - tw / 2), box.clientWidth - tw) + "px";
